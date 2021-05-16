@@ -13,10 +13,10 @@
 #include "PubSubClient.h" //pio lib install "knolleary/PubSubClient"
 
 //define router and broker
-#define SSID  "WiFi-2.4-A4F8" //"OnePlus jeff" //"NETGEAR68"// //
-#define PWD "w23bdj3rxsd4u"// "IKELPIGYQDHQWVSP" //"w23bdj3rxsd4u" //"jeffhotspot"   //"excitedtuba713"        //"NN53u7De3Swg"   // ////
+#define SSID "NETGEAR68"     // "OnePlus jeff"//
+#define PWD "excitedtuba713" //""
 
-#define MQTT_SERVER "broker.hivemq.com" // 192.168.1.2 // could change if the setup is moved
+#define MQTT_SERVER "192.168.1.2" //"broker.hivemq.com"
 #define MQTT_PORT 1883
 
 #define START 1                                 //button
@@ -30,9 +30,9 @@ XT_Wav_Class Sound(ringtone);       // met ringtone gegenereerde wav file (hexad
 XT_DAC_Audio_Class DacAudio(25, 0); //pins
 uint32_t DemoCounter = 0;
 
-int Pin = 25;
+int Pin = 26;
 
-int freq = 2000;
+//int freq = 2000;
 int channel = 0;
 int resolution = 8;
 
@@ -51,8 +51,6 @@ int test = 0;
 std::vector<std::string> array;
 std::vector<char *> array_char;
 
-char arr[44] = {'0'};
-int loper = 0;
 int i = 0;
 
 //mqtt
@@ -64,13 +62,13 @@ bool rinkel = false;
 bool code_correct = false;
 bool pauze_afstand = false;
 bool pauze_fitness = false;
+bool eenmaal_voltooid = false;
+bool opgenomen = false;
 
-bool opgenomen=false;
-
-const char *topic_speaker = "esp32/morse/speaker";
 const char *topic_intern = "esp32/morse/intern";
 const char *topic_control = "esp32/morse/control";
 const char *topic_telefoon = "esp32/fitness/telefoon";
+const char *topic_speaker = "esp32/morse/speaker_end";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -78,52 +76,37 @@ long lastMsg = 0;
 char msg[50];
 int value = 0;
 
-/*
- char *convert(const std::string & s)
+//!!!myDelay, eigen delay aanmaken want delay() is blocking !!
+unsigned long myPrevMillis;
+
+void myDelay(int del)
 {
-  
-   char *pc = new char[s.size()+1];
-   std::strcpy(pc, s.c_str());
-   return pc; 
-   
-   //return s.c_str();
+  myPrevMillis = millis();
+  unsigned long myCurrentMillis = myPrevMillis;
+  while (millis() - myPrevMillis <= del)
+  {
+    myCurrentMillis = millis();
+    client.loop();
+  }
 }
-
-char *getArray(){
-  std::transform(array.begin(), array.end(), std::back_inserter(array_char), convert);  
-
-       for ( size_t i = 0 ; i < array_char.size() ; i++ ){
-
-            return array_char[i];
-           // client.publish(topic_speaker,array_char[i]);
-           // Serial.println(array_char[i]);
-       }
-       for (int i = 0; i < array_char.size() && i < arr; i++) {
-            arr[i] = array_char[i];
-}
-       for ( size_t i = 0 ; i < array_char.size() ; i++ )
-            delete [] array_char[i];
-            
-} 
-  */
 
 //MQTT
 //define callback method
 
-// void callback(char *topic, byte *message, unsigned int length);
+void callback(char *topic, byte *message, unsigned int length);
 
 // function for establishing wifi connection, do not touch
 
 void setup_wifi()
 {
-  delay(10);
+  myDelay(10);
   Serial.println("Connecting to WiFi..");
 
   WiFi.begin(SSID, PWD);
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    myDelay(500);
     Serial.print(".");
   }
 
@@ -148,36 +131,28 @@ void callback(char *topic, byte *message, unsigned int length)
   }
   Serial.println();
 
-  // Feel free to add more if statements to control more GPIOs with MQTT
-  // When receiving a message on "esp32/control" a check should be excecuted
-
-  // If a message is received on the topic esp32/control, you check if the message is either "start" or "stop" (or "reset").
-  // Changes the state according to the message
-  if (String(topic) == "esp32/morse/intern")
+   if (String(topic) == "esp32/morse/intern")
   {
-    if (messageTemp.equals("correct"))
+    if (messageTemp.equals("correct")) //spelers floten juiste code na--> speaker stopt met spelen van morse code/ esp reset
     {
-      // Serial.print("correcte code");
+
       code_correct = true;
       gestart = false;
+      WiFi.disconnect();
+      myDelay(1000);
+      ESP.restart();
     }
   }
 
   // Main broker
   if (String(topic) == "esp32/morse/control")
   {
-    if (messageTemp.equals("0")) //RESET morseproef
+    if (messageTemp.equals("0")) //RESET is gegeven
     {
-      /*
-      gestart = false;
-      reset = true;
-      code_correct = false;
-      rinkel = false;
-      */
-     status=STOP;
-     Serial.println("RESET");
-      WiFi.disconnect();                                    
-      delay(1000);
+
+      Serial.println("RESET");
+      WiFi.disconnect();
+      myDelay(1000);
       ESP.restart();
     }
     if (messageTemp.equals("1")) //STOP morseproef, want niet genoeg afstand
@@ -194,6 +169,7 @@ void callback(char *topic, byte *message, unsigned int length)
     }
     if (messageTemp.equals("3")) //STOP morseproef, want batterij leeg
     {
+
       pauze_fitness = true;
     }
     if (messageTemp.equals("4")) //START morseproef, want batterij terug geladen
@@ -203,29 +179,28 @@ void callback(char *topic, byte *message, unsigned int length)
   }
   if (String(topic) == topic_telefoon)
   {
-    if (messageTemp.equals("BEL"))
+    if (messageTemp.equals("BEL")) // indien fitnesstracker voltooid is wordt bericht 'BEL' verstuurd naar speaker en kan morse puzzel van start gaan
     {
       rinkel = true;
       gestart = true;
       reset = false;
       code_correct = false;
-      
     }
   }
 }
 
-// function to establish MQTT connection
+//  MQTT connection opzetten
 
 void reconnect()
 {
- // delay(10);
+  myDelay(10);
   // Loop until we're reconnected
   Serial.println("Going in while loop MQTT connection");
   while (!client.connected())
   {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if  (client.connect("Morse_speaker"))
+    if (client.connect("Morse_speaker"))
     {
 
       Serial.println("connected");
@@ -242,7 +217,7 @@ void reconnect()
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
       // Wait 5 seconds before retrying
-      delay(5000);
+      myDelay(5000);
     }
   }
 }
@@ -254,15 +229,15 @@ void tone(int pin, int frequentie, int duration) // alternatief arduino methode 
   ledcSetup(channel, frequentie, SOUND_RESOLUTION);
   ledcAttachPin(pin, channel);
   /*ledcWriteTone(channel, geluid_on);
-  delay(duration);
+  myDelay(duration);
   ledcWriteTone(channel, geluid_off);  
   */
   ledcWriteTone(channel, frequentie);
-  delay(duration);
+  myDelay(duration);
   ledcWriteTone(channel, 0);
 }
 
-String getKar()  //random string van aanmaken
+String getKar() //random string van aanmaken
 {
   char kar[26] = {(char)'a', (char)'b', (char)'c', (char)'d', (char)'e', (char)'f', (char)'g', (char)'h', (char)'i', (char)'j', (char)'k', (char)'l', (char)'m', (char)'n', (char)'o', (char)'p', (char)'q', (char)'r', (char)'s', (char)'t', (char)'u', (char)'v', (char)'w', (char)'x', (char)'y', (char)'z'};
 
@@ -270,7 +245,7 @@ String getKar()  //random string van aanmaken
 
   for (int i = 0; i < 4; i++)
   {
-   
+
     res = res + kar[esp_random() % 26];
   }
 
@@ -279,292 +254,275 @@ String getKar()  //random string van aanmaken
 
 void Punt()
 {
-  tone(Pin, 1200, lengte_pt); //speel toon met 
-  // delay(600);              // delay tss twee signalen
-  /*
-  client.publish(topic_intern, "0");
-  client.publish(topic_intern, "1");
-  */
-  delay(300);
 
-  //verwijzing kort signaal
-  //array.push_back("01");
-  /*
-  arr[loper]={'0'};
-  loper++;
-  arr[loper]='1';
-  loper++;
-*/
+  tone(Pin, 500, lengte_pt); //speel toon met freq van 500Hz
+
+  if (eenmaal_voltooid == false)
+  {
+    client.publish(topic_intern, "0"); // 0,1 wordt als kort gezien (punt) ,publishen naar micro
+    client.publish(topic_intern, "1");
+  }
+  myDelay(400);
 }
 
 void Streep()
 {
-  tone(Pin, 1200, lengte_str); // speel toon
-  // delay(600);          // delay tussen twee signalen
-/*
-  client.publish(topic_intern, "0");
-  client.publish(topic_intern, "1");
-  client.publish(topic_intern, "2");
-*/
-  delay(300);
 
-  //verwijzing naar lang signaal
-  //array.push_back("012");
-  /* 
-  arr[loper]={'0'};
-  loper++;
-  arr[loper]='1';
-  loper++;
-  arr[loper]='2';
-  loper++;
-*/
+  tone(Pin, 500, lengte_str);
 
-  //client.publish(topic_speaker, "012");
+  if (eenmaal_voltooid == false)
+  { //0,1,2 als lang signaal (streep)
+    client.publish(topic_intern, "0");
+    client.publish(topic_intern, "1");
+    client.publish(topic_intern, "2");
+  }
+  myDelay(400);
 }
 
+// Elke letter omzetten naar morse
 void getA()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getB()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getC()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getD()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getE()
 {
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getF()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getG()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getH()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getI()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getJ()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getK()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getL()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getM()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getN()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getO()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getP()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getQ()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getR()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getS()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 void getT()
 {
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getU()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getV()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getW()
 {
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getX()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getY()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
 }
 void getZ()
 {
   Streep();
-  delay(100);
+  myDelay(100);
   Streep();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
   Punt();
-  delay(100);
+  myDelay(100);
 }
 
 void Morse()
@@ -572,112 +530,90 @@ void Morse()
   if (ch == 'a')
   {
     getA();
-    
   }
   else if (ch == 'b')
   {
     getB();
-    
   }
   else if (ch == 'c')
   {
     getC();
-    
   }
   else if (ch == 'd')
   {
     getD();
-    
   }
   else if (ch == 'e')
   {
     getE();
-    
   }
   else if (ch == 'f')
   {
     getF();
-   
   }
   else if (ch == 'g')
   {
     getG();
-    
   }
   else if (ch == 'h')
   {
     getH();
-    
   }
   else if (ch == 'i')
   {
     getI();
-    
   }
   else if (ch == 'j')
   {
     getJ();
-    
   }
   else if (ch == 'k')
   {
     getK();
-    
   }
   else if (ch == 'l')
   {
     getL();
-    
   }
   else if (ch == 'm')
   {
     getM();
-    
   }
   else if (ch == 'n')
   {
     getN();
-   
   }
   else if (ch == 'o')
   {
     getO();
-   
   }
   else if (ch == 'p')
   {
     getP();
-  
   }
   else if (ch == 'q')
   {
     getQ();
-   
   }
   else if (ch == 'r')
   {
     getR();
-  
   }
   else if (ch == 's')
   {
     getS();
-   
   }
   else if (ch == 't')
   {
     getT();
-  
   }
   else if (ch == 'u')
   {
     getU();
-    
   }
   else if (ch == 'v')
   {
     getV();
-  
   }
   else if (
       ch == 'w')
@@ -687,23 +623,20 @@ void Morse()
   else if (ch == 'x')
   {
     getX();
-    
   }
   else if (ch == 'y')
   {
     getY();
-  
   }
   else if (ch == 'z')
   {
     getZ();
-    
   }
 }
 
-void playRinkeltoon()
+void playRinkeltoon() //rinkeltoon telefoon afspelen
 {
-  //rinkeltoon telefoon afspelen
+
   DacAudio.FillBuffer();
   if (Sound.Playing == false)
   {
@@ -719,21 +652,18 @@ void printArrayAlf()
   Serial.println(st);
 }
 
-void playMorse()
+void playMorse() //morsecode afspelen
 {
 
-  //morsecode afspelen
-  Serial.println("playmorse");
-  
-  if (test == 0)  //anders telkens nieuwe sequentie bij elke loop()
+  if (test == 0) //anders telkens nieuwe morse sequentie bij elke loop()
   {
     printArrayAlf();
     test = 1;
- }
+  }
   ledcWriteTone(channel, 100); // starttoon
-  delay(2000);
+  myDelay(2000);
   ledcWriteTone(channel, 0);
-  delay(2000);
+  myDelay(2000);
 
   //omzetten naar audio
   for (int i = 0; i < st.length(); i++)
@@ -741,103 +671,73 @@ void playMorse()
     ch = st.charAt(i);
     Morse();
   }
-  
 
-  delay(1000);
+  eenmaal_voltooid = true;
+  myDelay(1000);
 
-  ledcWriteTone(channel, 100); //einde toon
-  delay(3000);
+  ledcWriteTone(channel, 50);             //einde toon
+  client.publish(topic_speaker, "einde"); //einde aangeven aan micro
+  myDelay(3000);
   ledcWriteTone(channel, 0);
-  delay(20000); 
-
+  myDelay(20000);
 }
 
 void setup()
 {
-
   Serial.begin(115200);
-  // pinMode(18, INPUT);
+  //pinMode(18, INPUT);
+  pinMode(16, OUTPUT);
+  button.setDebounceTime(50); //debouncen van knop
 
-  button.setDebounceTime(50); //debouncen
-
-  ledcSetup(channel, freq, resolution);
-  ledcAttachPin(25, channel);
+  //ledcSetup(channel, freq, resolution);
+  ledcAttachPin(Pin, channel); //25 aa
 
   //MQTT
-  //gestart = true;
   //setup wifi
   setup_wifi();
   client.setServer(MQTT_SERVER, MQTT_PORT);
   client.setCallback(callback);
-
-  //pinMode(LED_PIN, OUTPUT);
 }
 
 void loop()
 {
-button.loop();
+  digitalWrite(17, HIGH);
+  button.loop();
   //MQTT
-  Serial.print("voor if-lus ivm client.connected()  ");////////////////////Sarah
-  Serial.println(client.connected());////////////////////Sarah
+
   if (!client.connected())
   {
     reconnect();
-    Serial.print("reconnecten");
   }
-  Serial.print("voor client.loop() = na iflus  ");////////////////////Sarah
-  Serial.println(client.connected());////////////////////Sarah
   client.loop();
-  Serial.print("na client.loop()  ");////////////////////Sarah
-  Serial.println(client.connected());////////////////////Sarah
-/*
+
   long now = millis();
   if (now - lastMsg > 5000)
   {
     lastMsg = now;
   }
-*/
-  if (gestart == true && code_correct == false )
-  {  
-    if (status == STOP)
+
+  if (gestart == true && code_correct == false && pauze_fitness == false && pauze_afstand == false && rinkel == true)
+  {
+    if (status == STOP) //status van knop
     {
       playRinkeltoon();
-
-      if (i < 1)
-      {
-        client.publish(topic_telefoon, "ik ben aan het rinkelen...rinkel rinkel rinkel!");
-        i++;
-      }
     }
 
-//Serial.println(button.getState()); 
-   
-   if (button.isPressed())
+    if (button.isPressed())
     {
-      
-     // button.isReleased();
-    // client.publish(topic_telefoon, "telefoon opgenomen (knop ingedrukt)");
-     
-     //Serial.println(button.getState());  
 
       if (status == STOP)
       {
         status = START;
-        //rinkel = false; 
-    
       }
 
-    /*
       else
         status = STOP;
-        
-*/
     }
-    if(status == START)
+    if (status == START)
     {
       playMorse();
-      //Serial.print("na play morse  ");////////////////////Sarah
-      //Serial.println(client.connected()); //////////////////Sarah
     }
   }
-
 }
