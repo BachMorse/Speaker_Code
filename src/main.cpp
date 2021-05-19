@@ -13,15 +13,14 @@
 #include "PubSubClient.h" //pio lib install "knolleary/PubSubClient"
 
 //define router and broker
-#define SSID "NETGEAR68"     // "OnePlus jeff"//
-#define PWD "excitedtuba713" //""
+#define SSID  "NETGEAR68" //"OnePlus jeff"
+#define PWD    "excitedtuba713"   //""
 
 #define MQTT_SERVER "192.168.1.2" //"broker.hivemq.com"
 #define MQTT_PORT 1883
 
 #define START 1                                 //button
 #define STOP 0                                  //button
-#define SOUND_RESOLUTION 8                      // 8 bit resolution
 #define geluid_on (1 << (SOUND_RESOLUTION - 1)) // 50% van duty cycle
 #define geluid_off 0                            // 0% van duty cycle
 
@@ -29,7 +28,6 @@
 XT_Wav_Class Sound(ringtone);       // met ringtone gegenereerde wav file (hexadecimaal)
 XT_DAC_Audio_Class DacAudio(25, 0); //pins
 uint32_t DemoCounter = 0;
-
 int Pin = 26;
 
 //int freq = 2000;
@@ -139,8 +137,9 @@ void callback(char *topic, byte *message, unsigned int length)
       code_correct = true;
       gestart = false;
       WiFi.disconnect();
-      myDelay(1000);
+      myDelay(5000);
       ESP.restart();
+     
     }
   }
 
@@ -149,10 +148,14 @@ void callback(char *topic, byte *message, unsigned int length)
   {
     if (messageTemp.equals("0")) //RESET is gegeven
     {
-
-      Serial.println("RESET");
+        reset=true;
+      //Serial.println("RESET");
+     // WiFi.disconnect();
+      
+       //ESP.restart();
+      
       WiFi.disconnect();
-      myDelay(1000);
+      myDelay(5000);
       ESP.restart();
     }
     if (messageTemp.equals("1")) //STOP morseproef, want niet genoeg afstand
@@ -226,7 +229,7 @@ void reconnect()
 
 void tone(int pin, int frequentie, int duration) // alternatief arduino methode tone()
 {
-  ledcSetup(channel, frequentie, SOUND_RESOLUTION);
+  ledcSetup(channel, frequentie, resolution);
   ledcAttachPin(pin, channel);
   /*ledcWriteTone(channel, geluid_on);
   myDelay(duration);
@@ -262,7 +265,7 @@ void Punt()
     client.publish(topic_intern, "0"); // 0,1 wordt als kort gezien (punt) ,publishen naar micro
     client.publish(topic_intern, "1");
   }
-  myDelay(400);
+  myDelay(450); //tijd tussen twee signalen in
 }
 
 void Streep()
@@ -276,7 +279,7 @@ void Streep()
     client.publish(topic_intern, "1");
     client.publish(topic_intern, "2");
   }
-  myDelay(400);
+  myDelay(450);
 }
 
 // Elke letter omzetten naar morse
@@ -655,7 +658,7 @@ void printArrayAlf()
 void playMorse() //morsecode afspelen
 {
 
-  if (test == 0) //anders telkens nieuwe morse sequentie bij elke loop()
+  if (test == 0) //anders telkens nieuwe morse sequentie bij elke loop() //of in getKar zelf aanpassen
   {
     printArrayAlf();
     test = 1;
@@ -671,7 +674,6 @@ void playMorse() //morsecode afspelen
     ch = st.charAt(i);
     Morse();
   }
-
   eenmaal_voltooid = true;
   myDelay(1000);
 
@@ -679,7 +681,7 @@ void playMorse() //morsecode afspelen
   client.publish(topic_speaker, "einde"); //einde aangeven aan micro
   myDelay(3000);
   ledcWriteTone(channel, 0);
-  myDelay(20000);
+  myDelay(10000);
 }
 
 void setup()
@@ -690,7 +692,8 @@ void setup()
   button.setDebounceTime(50); //debouncen van knop
 
   //ledcSetup(channel, freq, resolution);
-  ledcAttachPin(Pin, channel); //25 aa
+  ledcAttachPin(Pin, channel); 
+
 
   //MQTT
   //setup wifi
@@ -701,9 +704,9 @@ void setup()
 
 void loop()
 {
-  digitalWrite(17, HIGH);
+
   button.loop();
-  //MQTT
+  //MQTT connectie  
 
   if (!client.connected())
   {
@@ -717,7 +720,7 @@ void loop()
     lastMsg = now;
   }
 
-  if (gestart == true && code_correct == false && pauze_fitness == false && pauze_afstand == false && rinkel == true)
+  if (gestart == true && code_correct == false && pauze_fitness == false && pauze_afstand == false && rinkel == true &&reset==false)
   {
     if (status == STOP) //status van knop
     {
